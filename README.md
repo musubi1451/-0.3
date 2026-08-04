@@ -70,6 +70,9 @@
 - `Trail Paint Radius Randomness`: インクの塗り半径のランダム幅
 - `Hit Effect Prefab`: 着弾エフェクト
 - `Character Hit Effect Prefab`: Player/Enemyにダメージが入った時のヒットエフェクト
+- `Auto Destroy Hit Effects`: 生成したヒットエフェクトを自動で消す
+- `Hit Effect Fallback Life Seconds`: Particleの長さを読めない時に消すまでの秒数
+- `Hit Effect Extra Life Seconds`: Particle再生終了後、少し余裕を持たせる秒数
 - `Fire Sound`: 発射時に鳴らすAudioClip
 
 `InkProjectile` の `Paint Nearby Surface On Character Hit` をONにすると、
@@ -81,6 +84,8 @@ Player/Enemyなど `InkHealth` の付いた相手に弾が当たった時、
 Particle Systemなどで作ったPrefabを `WeaponInkProfile > Character Hit Effect Prefab` に入れます。
 武器Profileを使わない場合は、弾Prefabの `InkProjectile > Character Hit Effect Prefab` に入れてください。
 `Character Hit Effect Prefab` が未設定の場合は、通常の `Hit Effect Prefab` が使われます。
+エフェクトが残り続ける場合は、弾Prefabの `InkProjectile > Auto Destroy Hit Effects` をONにしてください。
+通常はONのままでよく、消えるのが遅い場合は `Hit Effect Fallback Life Seconds` を短くします。
 
 `Weapon Profile` が未設定の場合は、`InkShooter` と `InkProjectile` にある
 従来の値が使われます。まずは既存設定のまま動かし、武器を増やしたくなったら
@@ -138,17 +143,27 @@ Profileを作る流れでも問題ありません。
 - `Rays Per Spray`: 1回に発射する弾の数
 - `Max Spray Distance`: 周囲を探す距離
 - `Spread Along Surface`: 周囲への散らばり幅
+- `Min Spread Scale`: 外周方向へ飛ばす最小倍率。`0` に近いほど足元付近にも飛ぶ
+- `Max Spread Scale`: 外周方向へ飛ばす最大倍率
+- `Center Spray Chance`: 足元付近へ飛ばす弾の割合
+- `Center Spray Max Scale`: 足元付近に飛ばす時の最大散らばり幅
 - `Use Projectile Spray`: ONにするとプレイヤーと同じ `InkProjectile` を発射する
 - `Projectile Weapon Profile`: スプリンクラーが撃つ弾のProfile
 - `Projectile Prefab`: Profileを使わない場合の予備Projectile Prefab
 - `Projectile Speed`: Profileを使わない場合の予備弾速
-- `Projectile Normal Boost`: 接着面から少し外側へ飛ばす強さ
+- `Projectile Min Surface Angle`: 発射角度の最小値。`0` が設置面と平行
+- `Projectile Max Surface Angle`: 発射角度の最大値。`90` が設置面に垂直
 - `Projectile Spawn Offset`: 接着面から少し離して弾を出す距離
 - `Projectile Forward Spawn Offset`: 弾の発射方向へ少し前にずらす距離
 - `Fallback To Ray Paint`: Projectileが未設定の時だけ旧Ray塗りを使う
 - `Stick To Hit Object`: 当たった地面/壁の子にする
-- `Align Forward To Surface Normal`: スプリンクラーの正面を接地面の法線に合わせる
+- `Align To Surface Normal`: スプリンクラーの指定軸を接地面の法線に合わせる
+- `Surface Normal Axis`: 接地面に対して垂直にしたいスプリンクラーのローカル軸。基本は `Up`
+- `Preserve World Scale When Attached`: 親のスケールを受けず、スプリンクラーの見た目サイズを保つ
 - `Spray Effect`: 噴射中に再生するParticleSystem
+- `Spin While Spraying`: インクを発射している間だけ回転する
+- `Spin Root`: 回転させたいTransform。空ならスプリンクラー本体が回る
+- `Spin Degrees Per Second`: 1秒あたりの回転角度
 
 おすすめ初期値:
 
@@ -157,9 +172,19 @@ Profileを作る流れでも問題ありません。
 - `Rays Per Spray`: `3` から `6`
 - `Use Projectile Spray`: ON
 - `Projectile Weapon Profile`: スプリンクラー用の `WeaponInkProfile`
-- `Projectile Normal Boost`: `0.25` から `0.5`
+- `Min Spread Scale`: `0`
+- `Max Spread Scale`: `1`
+- `Center Spray Chance`: `0.25` から `0.4`
+- `Center Spray Max Scale`: `0.2` から `0.35`
+- `Projectile Min Surface Angle`: `5` から `10`
+- `Projectile Max Surface Angle`: `75` から `88`
 - `Projectile Spawn Offset`: `0.15` から `0.25`
 - `Projectile Forward Spawn Offset`: `0.2` から `0.45`
+- `Align To Surface Normal`: ON
+- `Surface Normal Axis`: 基本は `Up`。横倒しになる場合は `Forward` / `Right` / `NegativeUp` などを試す
+- `Preserve World Scale When Attached`: ON
+- `Spin While Spraying`: ON
+- `Spin Degrees Per Second`: `360` から `720`
 - `Max Spray Distance`: `3` から `4`
 - `Spread Along Surface`: `1` から `1.5`
 
@@ -200,10 +225,97 @@ Player本体に `InkSubWeaponController` を付けます。
 - `Attach To Head Key`: `L`
 - `Only In Human Form`: ON
 - `Replace Existing Sub Weapon`: ON
+- `Head Attach Local Position Offset`: L装着位置の追加オフセット
+- `Head Attach Local Euler Offset`: L装着回転の追加オフセット
 
 `R` で投げ、地面や壁に当たるとくっついて周囲を塗ります。
 `L` で `Head Attach Point` に直接くっつけます。
+`SubWeaponProfile` の `Head Attach Local Position/Euler` を基本位置にして、Playerごとの微調整は `InkSubWeaponController` の `Head Attach Local Position Offset/Euler Offset` で行います。
 まずは `Head Attach Point` 用に頭ボーンの子へ空Objectを作り、位置を少し上に調整するのがおすすめです。
+
+## スペシャルウェポン設定
+
+アメフラシは `SpecialWeaponProfile`、`RainCloudProfile`、`PlayerSpecialWeaponController` で管理します。
+塗りポイントを稼ぐとスペシャルゲージが増え、満タン時だけ発動できます。
+
+### RainCloudProfile
+
+Projectビューで右クリックし、`Create > Ink > Rain Cloud Profile` を作ります。
+
+主な設定:
+
+- `Cloud Prefab`: 雨雲Prefab。`InkRainCloudController` を付けたPrefab、または雲見た目Prefab
+- `Life Seconds`: 雲が残る時間
+- `Cloud Height`: 着弾地点からどれだけ上に雲を出すか
+- `Move Speed`: 雲の移動速度
+- `Drift Side Amplitude`: 横揺れの強さ
+- `Rain Interval`: 雨判定を出す間隔
+- `Rain Drops Per Tick`: 1回に落とす雨判定数
+- `Rain Area Radius`: 雨が降る範囲
+- `Rain Ray Distance`: 下方向に塗れる面を探す距離
+- `Paint Mask`: 塗れるメッシュのLayer
+- `Main Drop Paint Radius`: 雨滴中心の塗り半径
+- `Splash Stamp Count`: 着弾時に周囲へ出す飛沫塗りの数
+- `Splash Paint Radius Min/Max`: 飛沫塗りの大きさ
+- `Splash Distance Min/Max`: 飛沫が中心から散る距離
+- `Damage Mask`: ダメージ対象のLayer
+- `Damage Per Second`: 雨に当たった相手への継続ダメージ
+- `Damage Radius`: 各雨滴のダメージ範囲
+
+おすすめ初期値:
+
+- `Life Seconds`: `8`
+- `Cloud Height`: `5`
+- `Move Speed`: `1.8`
+- `Rain Interval`: `0.12`
+- `Rain Drops Per Tick`: `12`
+- `Rain Area Radius`: `4.5`
+- `Rain Ray Distance`: `12`
+- `Main Drop Paint Radius`: `0.03`
+- `Splash Stamp Count`: `4`
+- `Splash Paint Radius Min/Max`: `0.006` / `0.016`
+- `Splash Distance Min/Max`: `0.06` / `0.28`
+- `Damage Per Second`: `12`
+
+### アメフラシ投擲Prefab
+
+1. アメフラシの缶や装置用GameObjectを作ります。
+2. ルートに `Rigidbody` を付けます。
+3. ルートにColliderを付けます。
+4. ルートに `RainCloudThrowProjectile` を付けます。
+5. ProjectビューへドラッグしてPrefab化します。
+
+### SpecialWeaponProfile
+
+Projectビューで右クリックし、`Create > Ink > Special Weapon Profile` を作ります。
+
+主な設定:
+
+- `Required Paint Points`: スペシャルゲージMaxに必要な塗りポイント
+- `Throw Projectile Prefab`: アメフラシ投擲Prefab
+- `Throw Speed`: 投げる速さ
+- `Upward Velocity`: 投げる時の上向き成分
+- `Spawn Forward Distance`: 手元Transformがない時の生成距離
+- `Cooldown`: 使用後の短い待ち時間
+- `Rain Cloud Profile`: 作成した `RainCloudProfile`
+- `Activate Sound`: 発動音
+
+### Player側
+
+Player本体に `PlayerSpecialWeaponController` を付けます。
+
+設定:
+
+- `Aim Camera`: Player Camera
+- `Throw Point`: 手元や武器付近のTransform
+- `Special Profile`: 作成した `SpecialWeaponProfile`
+- `Player Controller`: Player本体の `PlayerInkController`
+- `Team`: `Player`
+- `Special Key`: まずは `Q`
+- `Only In Human Form`: ON
+
+`Required Paint Points` 分だけ塗りポイントを稼ぐと `Gauge01` が1になり、`Special Key` で発動できます。
+使用後、スペシャルゲージは0に戻ります。
 
 ### 体力と攻撃力
 
@@ -427,6 +539,41 @@ Animator Controller側では、`Taunt` をTriggerで作り、
 `Any State -> 煽りモーション` のConditionに `Taunt` を入れます。
 煽りモーションから待機へ戻るTransitionは、`Has Exit Time` をON、Conditionなしにします。
 
+## 三人称カメラ設定
+
+本家に近い、プレイヤーを画面中央より少し下に残すカメラにしたい場合は、
+`ThirdPersonInkCamera` を使います。
+`CameraRoot` を中心にCameraを回す方式ではなく、Cameraの位置と注視点を別々に計算します。
+
+導入手順:
+
+1. `Main Camera` を選びます。
+2. `ThirdPersonInkCamera` を追加します。
+3. `Follow Target` に `Player` を入れます。
+4. `Player Controller` にPlayerの `PlayerInkController` を入れます。
+5. `InkShooter > Aim Camera` に同じ `Main Camera` を入れます。
+6. `PlayerSpecialWeaponController > Aim Camera` に同じ `Main Camera` を入れます。
+7. `Main Camera` はできれば `Player/CameraRoot` の子から外し、Scene直下に置きます。
+
+おすすめ初期値:
+
+- `Distance`: `4.2`
+- `Target Height`: `1.25`
+- `Look At Height`: `1.55`
+- `Shoulder Offset`: `X 0.45`, `Y 0.05`, `Z 0`
+- `Look Down Target Lift`: `0.8`
+- `Look Up Target Drop`: `0.15`
+- `Screen Vertical Offset`: `0.18`
+- `Look Ahead Distance`: `7`
+- `Avoid Obstacles`: ON
+- `Collision Radius`: `0.22`
+- `Min Distance`: `0.8`
+
+キャラクターが画面中央に寄りすぎる場合は、`Screen Vertical Offset` と
+`Look Down Target Lift` を上げます。
+キャラクターが下に寄りすぎる場合は、この2つを下げます。
+壁際でCameraがめり込む場合は、`Obstacle Mask` にステージのLayerを入れてください。
+
 ## カメラ切り替え
 
 複数カメラの表示をキーで切り替えるには、空のGameObjectに `CameraDisplaySwitcher` を付けます。
@@ -486,6 +633,7 @@ Player、または人型モデルの親に `PlayerAimPoseController` を付け�
 - 左クリック / Fire1: インク弾を発射
 - R: サブウェポンを投げる
 - L: サブウェポンを頭に装着
+- Q: スペシャルウェポンを使う
 - Left Shift: イカ状態
 - T: 煽りモーション
 - Tab: 次のCameraへ切り替え
@@ -643,8 +791,10 @@ Layerが `Ground Mask` に含まれているか確認してください。
 - `Enemy Score Text`: 敵の塗り率表示用の `Text`
 - `Player Paint Point Text`: 自分の塗りポイント表示用の `Text`
 - `Enemy Paint Point Text`: 敵の塗りポイント表示用の `Text`
+- `Special Gauge Text`: スペシャルゲージ表示用の `Text`
 - `Ink Slider`: インク残量表示用の `Slider`
 - `Health Slider`: 体力表示用の `Slider`
+- `Special Slider`: スペシャルゲージ表示用の `Slider`
 - `Result Text`: 試合終了時の `WIN` / `LOSE` / `DRAW` 表示用の `Text`
 - `Player Score Fill`: 自分の塗り率バーに使う `Image`
 - `Enemy Score Fill`: 敵の塗り率バーに使う `Image`
@@ -652,6 +802,7 @@ Layerが `Ground Mask` に含まれているか確認してください。
 `InkHudUI` の `Game Manager` には `InkGameManager`、
 `Player Shooter` にはプレイヤーの `InkShooter` を割り当てます。
 `Player Health` にはプレイヤーの `InkHealth` を割り当てます。
+`Player Special` にはプレイヤーの `PlayerSpecialWeaponController` を割り当てます。
 未設定でも自動検索しますが、手動で入れる方が安全です。
 
 塗りポイントは、現在の塗り率ではなく、塗った瞬間に加算される累計ポイントです。
@@ -682,6 +833,7 @@ Layerが `Ground Mask` に含まれているか確認してください。
   - Shader: `Ink/Transparent Overlay`
   - 入れる場所: 塗り専用メッシュの `Mesh Renderer > Materials`
   - 役割: 未塗装部分は透明、塗った部分だけインク色で表示
+  - `Painted` ログが出るのに見えない場合は、塗り用メッシュの面が裏向きの可能性があります。このシェーダは両面表示にしてあります。
 - `M_InkStamp`
   - Shader: `Ink/Stamp`
   - 入れる場所: `PaintableSurface > Paint Stamp Material`
@@ -708,3 +860,16 @@ ONにすると、Unity Consoleに以下のような情報が出ます。
 
 まず動作確認するときは、`InkShooter`、`InkProjectile`、
 `PaintableSurface` の `Debug Logs` をONにするのがおすすめです。
+`Painted` ログの `maskPixel=(r,g,b,a)` で、Playerインクなら `r`、Enemyインクなら `b` が増えているか確認できます。
+
+- `maskPixel` の `r` / `b` が増えている: マスクへの書き込みは成功。Material/Shader/Renderer表示側の問題
+- `maskPixel` がずっと `(0,0,0,...)`: Paint関数は呼ばれているが、スタンプMaterialやUVの問題
+
+`maskPixel=(0,0,0,0)` のままなら、まず `M_InkStamp` を確認してください。
+
+- `M_InkStamp > Shader`: `Ink/Stamp`
+- `PaintableSurface > Paint Stamp Material`: `M_InkStamp`
+- `M_InkStamp` に `Ink/Transparent Overlay` や `Ink/Blend Surface` を設定しない
+
+`PaintableSurface > Apply Mask To Material Instance` はON推奨です。
+ONにすると、`MaterialPropertyBlock` だけでなくRendererのMaterialインスタンスにも `_InkMask` を渡します。
